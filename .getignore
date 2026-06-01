@@ -1,0 +1,11 @@
+# Excluir el entorno virtual
+.venv/
+__pycache__/
+*.pyc
+
+# Excluir la base de datos local (cada uno genera la suya con el seed)
+internshifts.db
+
+# Excluir archivos del sistema operativo
+.DS_Store
+Thumbs.db
