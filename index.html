@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InternShifts - Alumno</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex flex-col justify-center items-center min-h-screen p-4 space-y-4">
+
+    <div class="bg-gray-800 text-white rounded-xl p-4 w-full max-w-sm text-center shadow-lg">
+        <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">🛠️ Zona de Pruebas (Dev Mode)</p>
+        <button onclick="calibrarUbicacionServidor()" 
+                class="w-full bg-amber-500 hover:bg-amber-600 text-gray-900 font-bold py-2 px-4 rounded-lg text-xs transition duration-200">
+            🔄 Sincronizar Hospital con mi GPS Actual
+        </button>
+        <p id="dev-status" class="text-[11px] text-amber-300 mt-2 italic"></p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm border border-gray-200">
+        
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-600 tracking-tight">🚀 InternShifts</h1>
+            <p class="text-sm text-gray-500 mt-1">Módulo de Asistencia Estudiantil</p>
+        </div>
+        
+        <hr class="mb-6">
+        
+        <div class="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Ubicación Actual</h2>
+            <p id="coordenadas-texto" class="text-sm font-mono text-gray-700">Esperando señal de GPS...</p>
+        </div>
+
+        <div class="space-y-3">
+            <button onclick="registrarEntrada()" 
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-sm flex justify-center items-center space-x-2">
+                <span>📍 Registrar Entrada Turno</span>
+            </button>
+
+            <hr class="my-4 border-dashed">
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Bitácora / Observaciones <span class="text-gray-400 font-normal">(Opcional)</span>
+                </label>
+                <textarea id="salida-justificacion" 
+                          rows="2" 
+                          placeholder="Escribe novedades de la jornada aquí..." 
+                          class="w-full p-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 bg-gray-50 resize-none"></textarea>
+            </div>
+
+            <button onclick="registrarSalida()" 
+                    class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-sm flex justify-center items-center space-x-2">
+                <span>🛑 Registrar Salida Turno</span>
+            </button>
+        </div>
+
+        <div id="resultado-caja" class="hidden mt-6 rounded-xl p-4 text-sm font-medium border">
+            <p id="resultado-mensaje"></p>
+        </div>
+    </div>
+
+    <script>
+        const URL_BASE = "http://127.0.0.1:8000";
+        
+        // MEMORIA DINÁMICA: Guardará el ID del turno que abramos en tiempo real
+        let idRegistroActual = 1; 
+
+        // 1. Calibración del entorno de desarrollo
+        function calibrarUbicacionServidor() {
+            const status = document.getElementById("dev-status");
+            status.innerText = "Obteniendo tu GPS...";
+
+            navigator.geolocation.getCurrentPosition(async function(posicion) {
+                const lat = posicion.coords.latitude;
+                const lon = posicion.coords.longitude;
+
+                try {
+                    await fetch(`${URL_BASE}/geocercas/calibrar-prueba`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ latitud: lat, longitud: lon })
+                    });
+                    status.innerText = "✅ ¡Hospital movido a tu ubicación actual!";
+                } catch (err) {
+                    status.innerText = "❌ Error al conectar con el backend.";
+                }
+            });
+        }
+
+        // 2. Lógica para Registrar Entrada (RF-02)
+        function registrarEntrada() {
+            ejecutarAccionAsistencia("/asistencia/entrada", (lat, lon) => ({
+                asignacion_id: 1,
+                latitud_actual: lat,
+                longitud_actual: lon
+            }), 201);
+        }
+
+        // 3. Lógica para Registrar Salida (RF-04) - AHORA USA EL ID REAL DINÁMICO
+        function registrarSalida() {
+            const textoJustificacion = document.getElementById("salida-justificacion").value;
+            
+            ejecutarAccionAsistencia("/asistencia/salida", (lat, lon) => ({
+                registro_id: idRegistroActual, // <-- Ya no es fijo, usa el que abrimos recién
+                latitud_actual: lat,   
+                longitud_actual: lon,  
+                justificacion: textoJustificacion 
+            }), 200);
+        }
+
+        // Motor genérico para procesar solicitudes de asistencia
+        function ejecutarAccionAsistencia(endpoint, construirPayload, codigoExito) {
+            const textoCoordenadas = document.getElementById("coordenadas-texto");
+            const cajaResultado = document.getElementById("resultado-caja");
+            const mensajeResultado = document.getElementById("resultado-mensaje");
+
+            navigator.geolocation.getCurrentPosition(async function (posicion) {
+                const lat = posicion.coords.latitude;
+                const lon = posicion.coords.longitude;
+
+                textoCoordenadas.innerText = `Lat: ${lat.toFixed(4)} | Lon: ${lon.toFixed(4)}`;
+                const datosParaEnviar = construirPayload(lat, lon);
+
+                try {
+                    const respuesta = await fetch(`${URL_BASE}${endpoint}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(datosParaEnviar)
+                    });
+
+                    const datosRespuesta = await respuesta.json();
+                    cajaResultado.classList.remove("hidden");
+
+                    if (respuesta.status === codigoExito) {
+                        cajaResultado.className = "mt-6 rounded-xl p-4 text-sm font-medium bg-green-50 text-green-700 border-green-200";
+                        mensajeResultado.innerHTML = `<strong>¡Operación Exitosa!</strong><br>${datosRespuesta.mensaje || "Registro procesado correctamente."}`;
+                        
+                        // TRUCO MAESTRO: Si la Entrada fue exitosa, guardamos el ID del nuevo turno abierto
+                        if (endpoint === "/asistencia/entrada" && (datosRespuesta.id || datosRespuesta.registro_id)) {
+                            idRegistroActual = datosRespuesta.id || datosRespuesta.registro_id;
+                            console.log("Turno abierto detectado. Guardando ID de asistencia:", idRegistroActual);
+                        }
+                        
+                    } else if (respuesta.status === 403) {
+                        cajaResultado.className = "mt-6 rounded-xl p-4 text-sm font-medium bg-red-50 text-red-700 border-red-200";
+                        mensajeResultado.innerHTML = `<strong>Bloqueo de Seguridad:</strong><br>${datosRespuesta.detail}`;
+                    } else {
+                        cajaResultado.className = "mt-6 rounded-xl p-4 text-sm font-medium bg-amber-50 text-amber-700 border-amber-200";
+                        const textoInfalible = JSON.stringify(datosRespuesta, null, 2);
+                        mensajeResultado.innerHTML = `<strong>Aviso del Servidor:</strong><br><pre class="text-xs font-mono mt-2 bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap">${textoInfalible}</pre>`;
+                    }
+                } catch (error) {
+                    cajaResultado.classList.remove("hidden");
+                    cajaResultado.className = "mt-6 rounded-xl p-4 text-sm font-medium bg-red-50 text-red-700 border-red-200";
+                    mensajeResultado.innerText = "Error crítico de conexión con el backend.";
+                }
+            });
+        }
+    </script>
+</body>
+</html>
